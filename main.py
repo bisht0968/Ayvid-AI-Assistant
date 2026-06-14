@@ -1,15 +1,20 @@
 from core.ollama_client import chat
 from config import SYSTEM_PROMPT
 from memory.memory_store import (
+    init_memory,
     add_memory,
     forget_memory,
     get_all_memories,
+    get_relevant_memories,
     format_memories_for_prompt,
 )
 
 
-def build_system_prompt() -> str:
-    memories = get_all_memories()
+def build_system_prompt(query: str = "") -> str:
+    if query:
+        memories = get_relevant_memories(query, top_k=3)
+    else:
+        memories = []
     memory_block = format_memories_for_prompt(memories)
     if memory_block:
         return f"{SYSTEM_PROMPT}\n\n{memory_block}"
@@ -39,9 +44,10 @@ def handle_memory_command(user_input: str) -> str | None:
 
 def run():
     print("Ayvid is ready. Type 'stop' to exit.\n")
+    init_memory()
 
     conversation = [
-        {"role": "system", "content": build_system_prompt()}
+        {"role": "system", "content": SYSTEM_PROMPT}
     ]
 
     while True:
@@ -58,13 +64,14 @@ def run():
             print("[Session ended]")
             break
 
-        # Check for memory commands first
         memory_response = handle_memory_command(user_input)
         if memory_response:
             print(f"Ayvid: {memory_response}\n")
-            # Rebuild system prompt with updated memory
-            conversation[0] = {"role": "system", "content": build_system_prompt()}
             continue
+
+        # Rebuild system prompt with relevant memories for this query
+        system_prompt = build_system_prompt(query=user_input)
+        conversation[0] = {"role": "system", "content": system_prompt}
 
         conversation.append({"role": "user", "content": user_input})
         response = chat(conversation)
