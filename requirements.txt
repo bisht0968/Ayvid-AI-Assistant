@@ -4,3 +4,5 @@ sentence-transformers
 pypdf
 markdown
 python-dotenv
+beautifulsoup4
+duckduckgo-search
