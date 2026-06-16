@@ -1,5 +1,6 @@
+import getpass
 from core.ollama_client import chat
-from config import SYSTEM_PROMPT
+from config import SYSTEM_PROMPT, ACCESS_PIN
 from memory.memory_store import (
     init_memory,
     add_memory,
@@ -8,17 +9,48 @@ from memory.memory_store import (
     get_relevant_memories,
     format_memories_for_prompt,
 )
+from documents.ingestion import ingest_document, list_documents
+from rag.vector_store import query_document_store
+from rag.embedder import embed
+
+
+def verify_pin() -> bool:
+    attempts = 3
+    while attempts > 0:
+        pin = getpass.getpass("Enter PIN: ")
+        if pin == ACCESS_PIN:
+            return True
+        attempts -= 1
+        remaining = attempts
+        if remaining > 0:
+            print(f"Wrong PIN. {remaining} attempt{'s' if remaining > 1 else ''} left.")
+        else:
+            print("Access denied.")
+    return False
+
+
+def get_relevant_doc_context(query: str) -> list:
+    query_embedding = embed(query)
+    return query_document_store(query_embedding, top_k=3)
 
 
 def build_system_prompt(query: str = "") -> str:
+    prompt = SYSTEM_PROMPT
+
     if query:
         memories = get_relevant_memories(query, top_k=3)
-    else:
-        memories = []
-    memory_block = format_memories_for_prompt(memories)
-    if memory_block:
-        return f"{SYSTEM_PROMPT}\n\n{memory_block}"
-    return SYSTEM_PROMPT
+        if memories:
+            lines = "\n".join(f"- {m}" for m in memories)
+            prompt += f"\n\nRelevant things the user has told you to remember:\n{lines}"
+
+        doc_results = get_relevant_doc_context(query)
+        if doc_results:
+            prompt += "\n\nRelevant context from the user's documents:"
+            for chunk, source in doc_results:
+                prompt += f"\n\n[From: {source}]\n{chunk}"
+            prompt += "\n\nWhen using document context, mention the source file name in your answer."
+
+    return prompt
 
 
 def handle_memory_command(user_input: str) -> str | None:
@@ -35,15 +67,35 @@ def handle_memory_command(user_input: str) -> str | None:
     if lower in ["ayvid what do you remember", "ayvid what do you remember?"]:
         memories = get_all_memories()
         if not memories:
-            return "I don't have anything stored in memory yet."
+            return "Nothing stored yet bro."
         lines = "\n".join(f"- {m}" for m in memories)
-        return f"Here's what I remember:\n{lines}"
+        return f"Here's what I've got:\n{lines}"
+
+    return None
+
+
+def handle_document_command(user_input: str) -> str | None:
+    lower = user_input.lower()
+
+    if lower.startswith("ayvid load document "):
+        filename = user_input[20:].strip()
+        return ingest_document(filename)
+
+    if lower in ["ayvid what documents do you have", "ayvid what documents do you have?"]:
+        docs = list_documents()
+        if not docs:
+            return "No documents loaded yet. Drop a file in user_docs/ and use 'Ayvid load document filename'."
+        lines = "\n".join(f"- {d}" for d in docs)
+        return f"Documents I have loaded:\n{lines}"
 
     return None
 
 
 def run():
-    print("Ayvid is ready. Type 'stop' to exit.\n")
+    if not verify_pin():
+        return
+
+    print("\nAyvid is ready. Type 'stop' to exit.\n")
     init_memory()
 
     conversation = [
@@ -69,7 +121,11 @@ def run():
             print(f"Ayvid: {memory_response}\n")
             continue
 
-        # Rebuild system prompt with relevant memories for this query
+        doc_response = handle_document_command(user_input)
+        if doc_response:
+            print(f"Ayvid: {doc_response}\n")
+            continue
+
         system_prompt = build_system_prompt(query=user_input)
         conversation[0] = {"role": "system", "content": system_prompt}
 

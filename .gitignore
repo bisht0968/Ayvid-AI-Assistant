@@ -6,3 +6,6 @@ __pycache__/
 memory/memory.json
 memory/memory.json.migrated
 data/
+documents/user_docs/*
+!documents/user_docs/.gitkeep
+.env

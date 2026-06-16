@@ -10,7 +10,7 @@ def chat(messages: list, model: str = DEFAULT_MODEL) -> str:
         "stream": False,
     }
     try:
-        response = requests.post(url, json=payload, timeout=60)
+        response = requests.post(url, json=payload, timeout=120)
         response.raise_for_status()
         return response.json()["message"]["content"]
     except requests.exceptions.ConnectionError:
